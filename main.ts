@@ -40,9 +40,13 @@ async function askGemma() {
 
     output.innerText = text;
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Could not connect to Gemma.";
-    output.innerText = `Error: ${message}`;
+    const message = error instanceof Error ? error.message : String(error);
+    if (message === "Failed to fetch") {
+      output.innerText =
+        "Error: Failed to fetch (likely CORS). Enable Access-Control-Allow-Origin on your Worker response.";
+    } else {
+      output.innerText = `Error: ${message || "Could not connect to Gemma."}`;
+    }
     console.error(error);
   } finally {
     button.disabled = false;
