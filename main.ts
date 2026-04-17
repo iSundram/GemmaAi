@@ -1,7 +1,9 @@
-// Define the structure of our expected response
 interface AIResponse {
-  result: {
-    response: string;
+  result?: {
+    response?: string;
+    choices?: Array<{
+      text?: string;
+    }>;
   };
 }
 
@@ -23,16 +25,24 @@ async function askGemma() {
   try {
     const response = await fetch(WORKER_URL, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      // Use a simple request to avoid CORS preflight failures on basic Worker setups.
       body: JSON.stringify({ prompt }),
     });
 
     if (!response.ok) throw new Error("Worker Error");
 
     const data: AIResponse = await response.json();
-    output.innerText = data.result.response;
+    const text =
+      data.result?.response ??
+      data.result?.choices?.[0]?.text;
+
+    if (!text) throw new Error("Unexpected API response format");
+
+    output.innerText = text;
   } catch (error) {
-    output.innerText = "Error: Could not connect to Gemma.";
+    const message =
+      error instanceof Error ? error.message : "Could not connect to Gemma.";
+    output.innerText = `Error: ${message}`;
     console.error(error);
   } finally {
     button.disabled = false;
