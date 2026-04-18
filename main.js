@@ -1,29 +1,14 @@
-// Define the Marked type since we're using it via CDN
-declare const marked: any;
+// main.js - Transpiled from main.ts
 
-interface Message {
-  role: 'user' | 'assistant';
-  content: string;
-}
-
-interface AIResponse {
-  result?: {
-    response?: string;
-    choices?: Array<{
-      text?: string;
-    }>;
-  };
-}
-
-const chatHistory = document.getElementById('chatHistory') as HTMLElement;
-const input = document.getElementById('prompt') as HTMLTextAreaElement;
-const sendBtn = document.getElementById('sendBtn') as HTMLButtonElement;
-const clearBtn = document.getElementById('clearBtn') as HTMLButtonElement;
+const chatHistory = document.getElementById('chatHistory');
+const input = document.getElementById('prompt');
+const sendBtn = document.getElementById('sendBtn');
+const clearBtn = document.getElementById('clearBtn');
 
 const STORAGE_KEY = 'gemma_chat_history';
 const WORKER_URL = "https://gemmaai.sundram5955a.workers.dev";
 
-let messages: Message[] = [];
+let messages = [];
 
 // Initialize
 function init() {
@@ -81,7 +66,7 @@ function renderHistory() {
   scrollToBottom();
 }
 
-function appendMessageToUI(msg: Message) {
+function appendMessageToUI(msg) {
   const msgDiv = document.createElement('div');
   msgDiv.className = `message ${msg.role}`;
   
@@ -114,7 +99,7 @@ async function handleSend() {
   if (!text || sendBtn.disabled) return;
 
   // Add user message
-  const userMsg: Message = { role: 'user', content: text };
+  const userMsg = { role: 'user', content: text };
   messages.push(userMsg);
   
   // Clear input
@@ -142,21 +127,21 @@ async function handleSend() {
 
     if (!response.ok) throw new Error("Worker Error");
 
-    const data: AIResponse = await response.json();
+    const data = await response.json();
     const aiText = data.result?.response ?? data.result?.choices?.[0]?.text;
 
     if (!aiText) throw new Error("Unexpected API response format");
 
     loadingDiv.remove();
     
-    const assistantMsg: Message = { role: 'assistant', content: aiText.trim() };
+    const assistantMsg = { role: 'assistant', content: aiText.trim() };
     messages.push(assistantMsg);
     appendMessageToUI(assistantMsg);
     saveMessages();
     scrollToBottom();
   } catch (error) {
-    loadingDiv.remove();
-    const errorMsg: Message = { 
+    if (loadingDiv.parentNode) loadingDiv.remove();
+    const errorMsg = { 
       role: 'assistant', 
       content: `**Error:** ${error instanceof Error ? error.message : 'Could not connect to Gemma.'}` 
     };
@@ -166,12 +151,9 @@ async function handleSend() {
   }
 }
 
-function constructPrompt(): string {
-  // Simple prompt construction with history
-  // Gemma usually expects a specific format, but we'll stick to a simple conversation log
+function constructPrompt() {
   let prompt = "You are Gemma, a helpful AI assistant. Answer clearly and use markdown for formatting.\n\n";
   
-  // Take last 10 messages to avoid prompt being too long
   const recentMessages = messages.slice(-10);
   
   recentMessages.forEach(msg => {

@@ -5,17 +5,34 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Gemma AI</title>
     <link rel="stylesheet" href="style.css">
+    <!-- Include Marked for Markdown rendering -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 </head>
 <body>
-    <div class="container">
+    <div class="app-container">
         <header>
-            <h1>Gemma 2</h1>
+            <h1>Gemma AI</h1>
+            <div class="header-actions">
+                <button id="clearBtn" class="secondary-btn">Clear History</button>
+            </div>
         </header>
-        
-        <textarea id="prompt" rows="4" placeholder="Ask me anything..."></textarea>
-        <button id="sendBtn">Generate</button>
 
-        <div id="output"></div>
+        <main id="chatHistory" class="chat-history">
+            <!-- Messages will be injected here -->
+            <div class="welcome-message">
+                <h2>How can I help you today?</h2>
+                <p>Start a conversation with Gemma, your personal AI assistant.</p>
+            </div>
+        </main>
+
+        <footer class="input-area">
+            <div class="input-container">
+                <textarea id="prompt" rows="1" placeholder="Type your message here..." autocomplete="off"></textarea>
+                <button id="sendBtn" title="Send message">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                </button>
+            </div>
+        </footer>
     </div>
 
     <script type="module" src="main.js"></script>
