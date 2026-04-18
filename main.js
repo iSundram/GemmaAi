@@ -3,6 +3,7 @@
 // State
 let sessions = [];
 let currentSessionId = null;
+let isTyping = false;
 
 // DOM Elements
 const chatHistory = document.getElementById('chatHistory');
@@ -22,6 +23,19 @@ const WORKER_URL = "https://gemmaai.sundram5955a.workers.dev";
 
 // Initialize
 function init() {
+  // Configure Marked to use Highlight.js
+  if (window.marked && window.hljs) {
+    marked.setOptions({
+      highlight: function(code, lang) {
+        const language = hljs.getLanguage(lang) ? lang : 'plaintext';
+        return hljs.highlight(code, { language }).value;
+      },
+      langPrefix: 'hljs language-',
+      breaks: true,
+      gfm: true
+    });
+  }
+
   loadSessions();
   
   if (sessions.length === 0) {
@@ -60,12 +74,12 @@ function init() {
 
   input.addEventListener('input', () => {
     input.style.height = 'auto';
-    input.style.height = input.scrollHeight + 'px';
+    input.style.height = Math.min(input.scrollHeight, 200) + 'px';
     sendBtn.disabled = input.value.trim() === '';
   });
 
   chatHistory.addEventListener('scroll', handleScroll);
-  scrollFab.addEventListener('click', scrollToBottom);
+  scrollFab.addEventListener('click', () => scrollToBottom(true));
 
   // Global click listener for copy buttons
   document.addEventListener('click', (e) => {
@@ -77,10 +91,13 @@ function init() {
         navigator.clipboard.writeText(decodeURIComponent(code)).then(() => {
           const originalHTML = copyBtn.innerHTML;
           copyBtn.innerHTML = '<i data-lucide="check"></i><span>Copied!</span>';
-          lucide.createIcons();
+          copyBtn.style.color = '#10b981'; // Green color for success
+          if (window.lucide) lucide.createIcons();
+          
           setTimeout(() => {
             copyBtn.innerHTML = originalHTML;
-            lucide.createIcons();
+            copyBtn.style.color = '';
+            if (window.lucide) lucide.createIcons();
           }, 2000);
         });
       }
@@ -118,6 +135,7 @@ function createNewSession() {
   saveSessions();
   renderSidebar();
   renderChat();
+  input.focus();
 }
 
 function renderSidebar() {
@@ -137,7 +155,7 @@ function renderSidebar() {
     };
     chatList.appendChild(li);
   });
-  lucide.createIcons();
+  if (window.lucide) lucide.createIcons();
 }
 
 function renderChat() {
@@ -149,12 +167,12 @@ function renderChat() {
   if (session.messages.length === 0) {
     chatHistory.innerHTML = `
       <div class="welcome-screen">
-          <div class="bot-avatar-large"><i data-lucide="bot"></i></div>
+          <div class="bot-avatar-large shadow-pulse"><i data-lucide="sparkles"></i></div>
           <h2>How can I help you today?</h2>
-          <p>Start a conversation with Gemma, your personal AI assistant.</p>
+          <p>Experience smoother responses, better code rendering, and modern UI.</p>
       </div>
     `;
-    lucide.createIcons();
+    if (window.lucide) lucide.createIcons();
     return;
   }
 
@@ -162,17 +180,22 @@ function renderChat() {
   const container = document.createElement('div');
   chatHistory.appendChild(container);
   
-  session.messages.forEach(msg => appendMessageToDOM(msg, container));
-  scrollToBottom();
+  session.messages.forEach(msg => appendMessageToDOM(msg, container, false));
+  scrollToBottom(false);
 }
 
-function appendMessageToDOM(msg, container) {
+function appendMessageToDOM(msg, container, animate = true) {
   const row = document.createElement('div');
   row.className = `message-row ${msg.role === 'user' ? 'user-message-row' : 'ai-message-row'}`;
+  if (!animate) {
+    row.style.animation = 'none';
+    row.style.opacity = '1';
+    row.style.transform = 'translateY(0)';
+  }
   
   const avatar = document.createElement('div');
   avatar.className = `avatar ${msg.role === 'user' ? 'user' : 'ai'}`;
-  avatar.innerHTML = msg.role === 'user' ? 'U' : '<i data-lucide="bot"></i>';
+  avatar.innerHTML = msg.role === 'user' ? 'U' : '<i data-lucide="sparkles"></i>';
   
   const contentWrapper = document.createElement('div');
   contentWrapper.className = 'message-content-wrapper';
@@ -186,7 +209,14 @@ function appendMessageToDOM(msg, container) {
   
   if (msg.role === 'assistant') {
     // Parse Markdown
-    let html = marked.parse(msg.content);
+    let html = msg.content;
+    if (window.marked) {
+      try {
+        html = marked.parse(msg.content);
+      } catch (e) {
+        console.error("Marked parsing error", e);
+      }
+    }
     
     // Add Copy Buttons to code blocks
     const temp = document.createElement('div');
@@ -194,8 +224,18 @@ function appendMessageToDOM(msg, container) {
     
     temp.querySelectorAll('pre').forEach(pre => {
       const code = pre.querySelector('code');
-      const lang = code?.className.replace('language-', '') || 'code';
-      const codeContent = code?.textContent || '';
+      let lang = 'text';
+      
+      if (code) {
+        const classes = code.className.split(' ');
+        const langClass = classes.find(c => c.startsWith('language-'));
+        if (langClass) {
+          lang = langClass.replace('language-', '');
+        }
+      }
+      
+      // We need the raw text for copying, not the highlighted HTML
+      const rawCodeText = code ? code.innerText || code.textContent : pre.textContent;
       
       const wrapper = document.createElement('div');
       wrapper.className = 'code-container';
@@ -203,8 +243,15 @@ function appendMessageToDOM(msg, container) {
       const header = document.createElement('div');
       header.className = 'code-header';
       header.innerHTML = `
-        <span>${lang}</span>
-        <button class="copy-btn" data-code="${encodeURIComponent(codeContent)}">
+        <div class="code-header-left">
+          <div class="mac-dots">
+            <span class="mac-dot-red"></span>
+            <span class="mac-dot-yellow"></span>
+            <span class="mac-dot-green"></span>
+          </div>
+          <span>${lang}</span>
+        </div>
+        <button class="copy-btn" data-code="${encodeURIComponent(rawCodeText)}">
           <i data-lucide="copy"></i>
           <span>Copy</span>
         </button>
@@ -226,16 +273,19 @@ function appendMessageToDOM(msg, container) {
   row.appendChild(contentWrapper);
   container.appendChild(row);
   
-  lucide.createIcons();
+  if (window.lucide) lucide.createIcons();
 }
 
 async function handleSend() {
+  if (isTyping) return;
   const text = input.value.trim();
   if (!text || sendBtn.disabled) return;
 
   const session = sessions.find(s => s.id === currentSessionId);
   if (!session) return;
 
+  isTyping = true;
+  
   // Update session title if first message
   if (session.messages.length === 0) {
     session.title = text.length > 30 ? text.substring(0, 30) + '...' : text;
@@ -252,9 +302,9 @@ async function handleSend() {
 
   if (session.messages.length === 1) chatHistory.innerHTML = '<div></div>';
   const container = chatHistory.querySelector('div');
-  appendMessageToDOM(userMsg, container);
+  appendMessageToDOM(userMsg, container, true);
   saveSessions();
-  scrollToBottom();
+  scrollToBottom(true);
 
   const loadingDiv = showLoading(container);
   
@@ -277,18 +327,20 @@ async function handleSend() {
     const assistantMsg = { role: 'assistant', content: aiText.trim() };
     session.messages.push(assistantMsg);
     session.updatedAt = Date.now();
-    appendMessageToDOM(assistantMsg, container);
+    appendMessageToDOM(assistantMsg, container, true);
     saveSessions();
-    scrollToBottom();
+    scrollToBottom(true);
   } catch (error) {
     if (loadingDiv) loadingDiv.remove();
     const errorMsg = { 
       role: 'assistant', 
       content: `**Error:** ${error instanceof Error ? error.message : 'Could not connect to Gemma.'}` 
     };
-    appendMessageToDOM(errorMsg, container);
+    appendMessageToDOM(errorMsg, container, true);
   } finally {
-    sendBtn.disabled = false;
+    isTyping = false;
+    sendBtn.disabled = input.value.trim() === '';
+    input.focus();
   }
 }
 
@@ -306,7 +358,7 @@ function showLoading(container) {
   const row = document.createElement('div');
   row.className = 'message-row ai-message-row loading-row';
   row.innerHTML = `
-    <div class="avatar ai"><i data-lucide="bot"></i></div>
+    <div class="avatar ai"><i data-lucide="sparkles"></i></div>
     <div class="message-content-wrapper">
       <div class="message-sender">Gemma</div>
       <div class="loading-indicator">
@@ -317,8 +369,8 @@ function showLoading(container) {
     </div>
   `;
   container.appendChild(row);
-  lucide.createIcons();
-  scrollToBottom();
+  if (window.lucide) lucide.createIcons();
+  scrollToBottom(true);
   return row;
 }
 
@@ -333,8 +385,11 @@ function closeSidebar() {
   sidebarOverlay.classList.remove('active');
 }
 
-function scrollToBottom() {
-  chatHistory.scrollTop = chatHistory.scrollHeight;
+function scrollToBottom(smooth = false) {
+  chatHistory.scrollTo({
+    top: chatHistory.scrollHeight,
+    behavior: smooth ? 'smooth' : 'auto'
+  });
 }
 
 function handleScroll() {
@@ -347,5 +402,8 @@ function handleScroll() {
 }
 
 // Run init
-init();
-lucide.createIcons();
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', init);
+} else {
+  init();
+}
