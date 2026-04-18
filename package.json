@@ -1,0 +1,12 @@
+{
+  "name": "gemma-ai",
+  "version": "1.0.0",
+  "description": "Gemma AI Chat Interface",
+  "main": "main.js",
+  "scripts": {
+    "build": "echo 'No build step needed for static files'"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}
