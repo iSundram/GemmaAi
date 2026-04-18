@@ -1,9 +1,17 @@
-// Define the Marked type since we're using it via CDN
+// Define external libraries
 declare const marked: any;
+declare const lucide: any;
 
 interface Message {
   role: 'user' | 'assistant';
   content: string;
+}
+
+interface Session {
+  id: string;
+  title: string;
+  messages: Message[];
+  updatedAt: number;
 }
 
 interface AIResponse {
@@ -15,24 +23,56 @@ interface AIResponse {
   };
 }
 
+// State
+let sessions: Session[] = [];
+let currentSessionId: string | null = null;
+
+// DOM Elements
 const chatHistory = document.getElementById('chatHistory') as HTMLElement;
+const chatList = document.getElementById('chatList') as HTMLElement;
 const input = document.getElementById('prompt') as HTMLTextAreaElement;
 const sendBtn = document.getElementById('sendBtn') as HTMLButtonElement;
-const clearBtn = document.getElementById('clearBtn') as HTMLButtonElement;
+const newChatBtn = document.getElementById('newChatBtn') as HTMLButtonElement;
+const clearAllBtn = document.getElementById('clearAllBtn') as HTMLButtonElement;
+const sidebar = document.getElementById('sidebar') as HTMLElement;
+const sidebarToggle = document.getElementById('sidebarToggle') as HTMLButtonElement;
+const sidebarOverlay = document.getElementById('sidebarOverlay') as HTMLElement;
+const currentSessionTitle = document.getElementById('currentSessionTitle') as HTMLElement;
+const scrollFab = document.getElementById('scrollFab') as HTMLButtonElement;
 
-const STORAGE_KEY = 'gemma_chat_history';
+const SESSIONS_KEY = 'gemma_sessions';
 const WORKER_URL = "https://gemmaai.sundram5955a.workers.dev";
-
-let messages: Message[] = [];
 
 // Initialize
 function init() {
-  loadMessages();
-  renderHistory();
+  loadSessions();
   
+  if (sessions.length === 0) {
+    createNewSession();
+  } else {
+    // Load last session
+    currentSessionId = sessions[0].id;
+    renderSidebar();
+    renderChat();
+  }
+
   // Event Listeners
   sendBtn.addEventListener('click', handleSend);
-  clearBtn.addEventListener('click', clearHistory);
+  newChatBtn.addEventListener('click', () => {
+    createNewSession();
+    if (window.innerWidth <= 768) closeSidebar();
+  });
+  
+  clearAllBtn.addEventListener('click', () => {
+    if (confirm('Delete all chat history?')) {
+      sessions = [];
+      saveSessions();
+      createNewSession();
+    }
+  });
+
+  sidebarToggle.addEventListener('click', toggleSidebar);
+  sidebarOverlay.addEventListener('click', closeSidebar);
   
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -41,100 +81,208 @@ function init() {
     }
   });
 
-  // Auto-resize textarea
   input.addEventListener('input', () => {
     input.style.height = 'auto';
     input.style.height = input.scrollHeight + 'px';
+    sendBtn.disabled = input.value.trim() === '';
+  });
+
+  chatHistory.addEventListener('scroll', handleScroll);
+  scrollFab.addEventListener('click', scrollToBottom);
+
+  // Global click listener for copy buttons
+  document.addEventListener('click', (e) => {
+    const target = e.target as HTMLElement;
+    const copyBtn = target.closest('.copy-btn');
+    if (copyBtn) {
+      const code = copyBtn.getAttribute('data-code');
+      if (code) {
+        navigator.clipboard.writeText(decodeURIComponent(code)).then(() => {
+          const originalHTML = copyBtn.innerHTML;
+          copyBtn.innerHTML = '<i data-lucide="check"></i><span>Copied!</span>';
+          lucide.createIcons();
+          setTimeout(() => {
+            copyBtn.innerHTML = originalHTML;
+            lucide.createIcons();
+          }, 2000);
+        });
+      }
+    }
   });
 }
 
-function loadMessages() {
-  const saved = localStorage.getItem(STORAGE_KEY);
+function loadSessions() {
+  const saved = localStorage.getItem(SESSIONS_KEY);
   if (saved) {
     try {
-      messages = JSON.parse(saved);
+      sessions = JSON.parse(saved);
+      // Sort by updatedAt descending
+      sessions.sort((a, b) => b.updatedAt - a.updatedAt);
     } catch (e) {
-      console.error('Failed to parse history', e);
-      messages = [];
+      console.error('Failed to parse sessions', e);
+      sessions = [];
     }
   }
 }
 
-function saveMessages() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
+function saveSessions() {
+  localStorage.setItem(SESSIONS_KEY, JSON.stringify(sessions));
 }
 
-function renderHistory() {
-  // Clear chat except for welcome message if empty
-  if (messages.length === 0) {
+function createNewSession() {
+  const newSession: Session = {
+    id: Date.now().toString(),
+    title: 'New Chat',
+    messages: [],
+    updatedAt: Date.now()
+  };
+  sessions.unshift(newSession);
+  currentSessionId = newSession.id;
+  saveSessions();
+  renderSidebar();
+  renderChat();
+}
+
+function renderSidebar() {
+  chatList.innerHTML = '';
+  sessions.forEach(session => {
+    const li = document.createElement('li');
+    li.className = `chat-item ${session.id === currentSessionId ? 'active' : ''}`;
+    li.innerHTML = `
+      <i data-lucide="message-square"></i>
+      <span>${session.title}</span>
+    `;
+    li.onclick = () => {
+      currentSessionId = session.id;
+      renderSidebar();
+      renderChat();
+      if (window.innerWidth <= 768) closeSidebar();
+    };
+    chatList.appendChild(li);
+  });
+  lucide.createIcons();
+}
+
+function renderChat() {
+  const session = sessions.find(s => s.id === currentSessionId);
+  if (!session) return;
+
+  currentSessionTitle.textContent = session.title;
+  
+  if (session.messages.length === 0) {
     chatHistory.innerHTML = `
-      <div class="welcome-message">
+      <div class="welcome-screen">
+          <div class="bot-avatar-large"><i data-lucide="bot"></i></div>
           <h2>How can I help you today?</h2>
           <p>Start a conversation with Gemma, your personal AI assistant.</p>
       </div>
     `;
+    lucide.createIcons();
     return;
   }
 
   chatHistory.innerHTML = '';
-  messages.forEach(msg => appendMessageToUI(msg));
+  const container = document.createElement('div');
+  chatHistory.appendChild(container);
+  
+  session.messages.forEach(msg => appendMessageToDOM(msg, container));
   scrollToBottom();
 }
 
-function appendMessageToUI(msg: Message) {
-  const msgDiv = document.createElement('div');
-  msgDiv.className = `message ${msg.role}`;
+function appendMessageToDOM(msg: Message, container: HTMLElement) {
+  const row = document.createElement('div');
+  row.className = `message-row ${msg.role === 'user' ? 'user-message-row' : 'ai-message-row'}`;
   
-  const label = document.createElement('div');
-  label.className = 'message-label';
-  label.textContent = msg.role === 'user' ? 'You' : 'Gemma';
+  const avatar = document.createElement('div');
+  avatar.className = `avatar ${msg.role === 'user' ? 'user' : 'ai'}`;
+  avatar.innerHTML = msg.role === 'user' ? 'U' : '<i data-lucide="bot"></i>';
   
-  const content = document.createElement('div');
-  content.className = 'message-content';
+  const contentWrapper = document.createElement('div');
+  contentWrapper.className = 'message-content-wrapper';
+  
+  const sender = document.createElement('div');
+  sender.className = 'message-sender';
+  sender.textContent = msg.role === 'user' ? 'You' : 'Gemma';
+  
+  const text = document.createElement('div');
+  text.className = 'message-text';
   
   if (msg.role === 'assistant') {
-    // Use marked for AI responses
-    content.innerHTML = marked.parse(msg.content);
+    // Parse Markdown
+    let html = marked.parse(msg.content);
+    
+    // Add Copy Buttons to code blocks
+    const temp = document.createElement('div');
+    temp.innerHTML = html;
+    
+    temp.querySelectorAll('pre').forEach(pre => {
+      const code = pre.querySelector('code');
+      const lang = code?.className.replace('language-', '') || 'code';
+      const codeContent = code?.textContent || '';
+      
+      const wrapper = document.createElement('div');
+      wrapper.className = 'code-container';
+      
+      const header = document.createElement('div');
+      header.className = 'code-header';
+      header.innerHTML = `
+        <span>${lang}</span>
+        <button class="copy-btn" data-code="${encodeURIComponent(codeContent)}">
+          <i data-lucide="copy"></i>
+          <span>Copy</span>
+        </button>
+      `;
+      
+      pre.parentNode?.insertBefore(wrapper, pre);
+      wrapper.appendChild(header);
+      wrapper.appendChild(pre);
+    });
+    
+    text.innerHTML = temp.innerHTML;
   } else {
-    // Plain text for user messages to prevent XSS
-    content.textContent = msg.content;
+    text.textContent = msg.content;
   }
   
-  msgDiv.appendChild(label);
-  msgDiv.appendChild(content);
-  chatHistory.appendChild(msgDiv);
-}
-
-function scrollToBottom() {
-  chatHistory.scrollTop = chatHistory.scrollHeight;
+  contentWrapper.appendChild(sender);
+  contentWrapper.appendChild(text);
+  row.appendChild(avatar);
+  row.appendChild(contentWrapper);
+  container.appendChild(row);
+  
+  lucide.createIcons();
 }
 
 async function handleSend() {
   const text = input.value.trim();
   if (!text || sendBtn.disabled) return;
 
-  // Add user message
+  const session = sessions.find(s => s.id === currentSessionId);
+  if (!session) return;
+
+  // Update session title if first message
+  if (session.messages.length === 0) {
+    session.title = text.length > 30 ? text.substring(0, 30) + '...' : text;
+    renderSidebar();
+  }
+
   const userMsg: Message = { role: 'user', content: text };
-  messages.push(userMsg);
+  session.messages.push(userMsg);
+  session.updatedAt = Date.now();
   
-  // Clear input
   input.value = '';
   input.style.height = 'auto';
-  
-  // Update UI
-  if (messages.length === 1) chatHistory.innerHTML = '';
-  appendMessageToUI(userMsg);
-  saveMessages();
-  scrollToBottom();
-
-  // Show loading
-  const loadingDiv = showLoading();
   sendBtn.disabled = true;
 
+  if (session.messages.length === 1) chatHistory.innerHTML = '<div></div>';
+  const container = chatHistory.querySelector('div') as HTMLElement;
+  appendMessageToDOM(userMsg, container);
+  saveSessions();
+  scrollToBottom();
+
+  const loadingDiv = showLoading(container);
+  
   try {
-    // Construct prompt with history
-    const prompt = constructPrompt();
-    
+    const prompt = constructPrompt(session.messages);
     const response = await fetch(WORKER_URL, {
       method: "POST",
       body: JSON.stringify({ prompt }),
@@ -150,9 +298,10 @@ async function handleSend() {
     loadingDiv.remove();
     
     const assistantMsg: Message = { role: 'assistant', content: aiText.trim() };
-    messages.push(assistantMsg);
-    appendMessageToUI(assistantMsg);
-    saveMessages();
+    session.messages.push(assistantMsg);
+    session.updatedAt = Date.now();
+    appendMessageToDOM(assistantMsg, container);
+    saveSessions();
     scrollToBottom();
   } catch (error) {
     loadingDiv.remove();
@@ -160,52 +309,66 @@ async function handleSend() {
       role: 'assistant', 
       content: `**Error:** ${error instanceof Error ? error.message : 'Could not connect to Gemma.'}` 
     };
-    appendMessageToUI(errorMsg);
+    appendMessageToDOM(errorMsg, container);
   } finally {
     sendBtn.disabled = false;
   }
 }
 
-function constructPrompt(): string {
-  // Simple prompt construction with history
-  // Gemma usually expects a specific format, but we'll stick to a simple conversation log
+function constructPrompt(messages: Message[]): string {
   let prompt = "You are Gemma, a helpful AI assistant. Answer clearly and use markdown for formatting.\n\n";
-  
-  // Take last 10 messages to avoid prompt being too long
-  const recentMessages = messages.slice(-10);
-  
-  recentMessages.forEach(msg => {
-    const roleName = msg.role === 'user' ? 'User' : 'Assistant';
-    prompt += `${roleName}: ${msg.content}\n`;
+  const recent = messages.slice(-10);
+  recent.forEach(msg => {
+    prompt += `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}\n`;
   });
-  
   prompt += "Assistant:";
   return prompt;
 }
 
-function showLoading() {
-  const loadingDiv = document.createElement('div');
-  loadingDiv.className = 'message assistant loading-bubble';
-  loadingDiv.innerHTML = `
-    <div class="message-label">Gemma</div>
-    <div class="loading-indicator">
-      <div class="dot"></div>
-      <div class="dot"></div>
-      <div class="dot"></div>
+function showLoading(container: HTMLElement) {
+  const row = document.createElement('div');
+  row.className = 'message-row ai-message-row loading-row';
+  row.innerHTML = `
+    <div class="avatar ai"><i data-lucide="bot"></i></div>
+    <div class="message-content-wrapper">
+      <div class="message-sender">Gemma</div>
+      <div class="loading-indicator">
+        <div class="dot"></div>
+        <div class="dot"></div>
+        <div class="dot"></div>
+      </div>
     </div>
   `;
-  chatHistory.appendChild(loadingDiv);
+  container.appendChild(row);
+  lucide.createIcons();
   scrollToBottom();
-  return loadingDiv;
+  return row;
 }
 
-function clearHistory() {
-  if (confirm('Clear all messages?')) {
-    messages = [];
-    saveMessages();
-    renderHistory();
+// UI Helpers
+function toggleSidebar() {
+  sidebar.classList.toggle('active');
+  sidebarOverlay.classList.toggle('active');
+}
+
+function closeSidebar() {
+  sidebar.classList.remove('active');
+  sidebarOverlay.classList.remove('active');
+}
+
+function scrollToBottom() {
+  chatHistory.scrollTop = chatHistory.scrollHeight;
+}
+
+function handleScroll() {
+  const isAtBottom = chatHistory.scrollHeight - chatHistory.scrollTop <= chatHistory.clientHeight + 100;
+  if (isAtBottom) {
+    scrollFab.classList.add('hidden');
+  } else {
+    scrollFab.classList.remove('hidden');
   }
 }
 
 // Run init
 init();
+lucide.createIcons();

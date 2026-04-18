@@ -7,34 +7,84 @@
     <link rel="stylesheet" href="style.css">
     <!-- Include Marked for Markdown rendering -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
 </head>
 <body>
-    <div class="app-container">
-        <header>
-            <h1>Gemma AI</h1>
-            <div class="header-actions">
-                <button id="clearBtn" class="secondary-btn">Clear History</button>
-            </div>
-        </header>
-
-        <main id="chatHistory" class="chat-history">
-            <!-- Messages will be injected here -->
-            <div class="welcome-message">
-                <h2>How can I help you today?</h2>
-                <p>Start a conversation with Gemma, your personal AI assistant.</p>
-            </div>
-        </main>
-
-        <footer class="input-area">
-            <div class="input-container">
-                <textarea id="prompt" rows="1" placeholder="Type your message here..." autocomplete="off"></textarea>
-                <button id="sendBtn" title="Send message">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+    <div class="app-layout">
+        <!-- Sidebar -->
+        <aside id="sidebar" class="sidebar">
+            <div class="sidebar-header">
+                <button id="newChatBtn" class="primary-btn wide-btn">
+                    <i data-lucide="plus"></i>
+                    <span>New Chat</span>
                 </button>
             </div>
-        </footer>
+            <nav class="sidebar-nav">
+                <ul id="chatList" class="chat-list">
+                    <!-- Chat sessions will be injected here -->
+                </ul>
+            </nav>
+            <div class="sidebar-footer">
+                <button id="clearAllBtn" class="ghost-btn">
+                    <i data-lucide="trash-2"></i>
+                    <span>Clear All</span>
+                </button>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <div class="main-content">
+            <header class="app-header">
+                <div class="header-left">
+                    <button id="sidebarToggle" class="icon-btn" title="Toggle Sidebar">
+                        <i data-lucide="menu"></i>
+                    </button>
+                    <h1 id="currentSessionTitle">Gemma AI</h1>
+                </div>
+                <div class="header-right">
+                    <!-- Additional actions could go here -->
+                </div>
+            </header>
+
+            <main id="chatHistory" class="chat-history">
+                <div class="welcome-screen">
+                    <div class="bot-avatar-large">
+                        <i data-lucide="bot"></i>
+                    </div>
+                    <h2>How can I help you today?</h2>
+                    <p>Start a conversation with Gemma, your personal AI assistant.</p>
+                </div>
+            </main>
+
+            <!-- Scroll to Bottom Button -->
+            <button id="scrollFab" class="fab hidden" title="Scroll to Bottom">
+                <i data-lucide="arrow-down"></i>
+            </button>
+
+            <footer class="input-area">
+                <div class="input-pill">
+                    <textarea id="prompt" rows="1" placeholder="Message Gemma..." autocomplete="off"></textarea>
+                    <button id="sendBtn" class="send-btn" disabled>
+                        <i data-lucide="send"></i>
+                    </button>
+                </div>
+                <div class="input-info">
+                    Gemma AI can make mistakes. Check important info.
+                </div>
+            </footer>
+        </div>
     </div>
 
+    <!-- Overlay for mobile sidebar -->
+    <div id="sidebarOverlay" class="sidebar-overlay"></div>
+
     <script type="module" src="main.js"></script>
+    <script>
+      // Initialize Lucide icons after rendering
+      window.addEventListener('DOMContentLoaded', () => {
+        lucide.createIcons();
+      });
+    </script>
 </body>
 </html>
